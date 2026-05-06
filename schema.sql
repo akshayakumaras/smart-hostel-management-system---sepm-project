@@ -1,0 +1,184 @@
+
+CREATE DATABASE IF NOT EXISTS smart_hostel_db
+  CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+USE smart_hostel_db;
+
+-- ── 1. USERS ─────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS users (
+  user_id       INT           NOT NULL AUTO_INCREMENT,
+  name          VARCHAR(100)  NOT NULL,
+  username      VARCHAR(50)   NOT NULL,
+  email         VARCHAR(150)  NOT NULL,
+  password_hash VARCHAR(255)  NOT NULL,
+  role          ENUM('student','warden') NOT NULL DEFAULT 'student',
+  created_at    DATETIME      NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (user_id),
+  UNIQUE KEY uq_username (username),
+  UNIQUE KEY uq_email    (email)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ── 2. STUDENT PROFILES ──────────────────────────────────────
+CREATE TABLE IF NOT EXISTS student_profiles (
+  profile_id    INT           NOT NULL AUTO_INCREMENT,
+  user_id       INT           NOT NULL,
+  roll_no       VARCHAR(30)   NOT NULL,
+  course        VARCHAR(100)  DEFAULT NULL,
+  year          VARCHAR(20)   DEFAULT NULL,
+  room_number   VARCHAR(20)   DEFAULT NULL,
+  block         VARCHAR(20)   DEFAULT NULL,
+  phone         VARCHAR(20)   DEFAULT NULL,
+  fee_status    ENUM('Paid','Pending','Overdue') DEFAULT 'Pending',
+  PRIMARY KEY (profile_id),
+  UNIQUE KEY uq_roll (roll_no),
+  CONSTRAINT fk_sp_user FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ── 3. COMPLAINTS ────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS complaints (
+  complaint_id  INT           NOT NULL AUTO_INCREMENT,
+  student_id    INT           NOT NULL,
+  category      VARCHAR(100)  NOT NULL,
+  room_number   VARCHAR(20)   DEFAULT NULL,
+  description   TEXT          NOT NULL,
+  status        ENUM('pending','inprogress','resolved') NOT NULL DEFAULT 'pending',
+  created_at    DATETIME      NOT NULL DEFAULT NOW(),
+  updated_at    DATETIME      NOT NULL DEFAULT NOW() ON UPDATE NOW(),
+  PRIMARY KEY (complaint_id),
+  CONSTRAINT fk_cmp_student FOREIGN KEY (student_id) REFERENCES users(user_id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ── 4. RAGGING REPORTS ───────────────────────────────────────
+CREATE TABLE IF NOT EXISTS ragging_reports (
+  report_id     INT           NOT NULL AUTO_INCREMENT,
+  student_id    INT               NULL,          -- NULL = anonymous
+  reporter_name VARCHAR(100)  DEFAULT NULL,
+  room_number   VARCHAR(20)   DEFAULT NULL,
+  incident_date DATE          DEFAULT NULL,
+  location      VARCHAR(200)  DEFAULT NULL,
+  description   TEXT          NOT NULL,
+  status        ENUM('underreview','investigating','resolved') NOT NULL DEFAULT 'underreview',
+  action_taken  TEXT          DEFAULT NULL,
+  submitted_at  DATETIME      NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (report_id),
+  CONSTRAINT fk_rag_student FOREIGN KEY (student_id) REFERENCES users(user_id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ── 5. NOTICES ───────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS notices (
+  notice_id     INT           NOT NULL AUTO_INCREMENT,
+  warden_id     INT           NOT NULL,
+  title         VARCHAR(200)  NOT NULL,
+  content       TEXT          NOT NULL,
+  priority      ENUM('notice','important','urgent') NOT NULL DEFAULT 'notice',
+  posted_at     DATETIME      NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (notice_id),
+  CONSTRAINT fk_ntc_warden FOREIGN KEY (warden_id) REFERENCES users(user_id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ── 6. FOOD MENU ─────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS food_menu (
+  menu_id       INT           NOT NULL AUTO_INCREMENT,
+  day           ENUM('Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday') NOT NULL,
+  meal_type     ENUM('Breakfast','Lunch','Dinner') NOT NULL,
+  items         TEXT          NOT NULL,
+  meal_time     VARCHAR(50)   DEFAULT NULL,
+  updated_by    INT               NULL,
+  updated_at    DATETIME      NOT NULL DEFAULT NOW() ON UPDATE NOW(),
+  PRIMARY KEY (menu_id),
+  UNIQUE KEY uq_day_meal (day, meal_type),
+  CONSTRAINT fk_menu_warden FOREIGN KEY (updated_by) REFERENCES users(user_id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ── 7. ROOMMATES (optional join table) ───────────────────────
+CREATE TABLE IF NOT EXISTS roommates (
+  id            INT NOT NULL AUTO_INCREMENT,
+  room_number   VARCHAR(20) NOT NULL,
+  user_id       INT NOT NULL,
+  PRIMARY KEY (id),
+  CONSTRAINT fk_rm_user FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ============================================================
+--  SEED DATA
+-- ============================================================
+
+-- Passwords are bcrypt hashes of the plain-text value shown in comments
+-- student → $2a$10$ hash of "student"
+-- warden  → $2a$10$ hash of "warden"
+-- (These hashes are generated by the seed script below;
+--  replace with actual bcrypt output if running raw SQL)
+
+-- We use INSERT IGNORE so re-running the script is safe
+INSERT IGNORE INTO users (name, username, email, password_hash, role) VALUES
+  ('Akshaya Kumar',   'student', 'akshaya@hostel.edu',  '$2a$10$PLACEHOLDER_STUDENT_HASH', 'student'),
+  ('Dr. Rajesh Sharma','warden', 'warden@hostel.edu',   '$2a$10$PLACEHOLDER_WARDEN_HASH',  'warden');
+
+-- Student profile (linked to user_id 1)
+INSERT IGNORE INTO student_profiles
+  (user_id, roll_no, course, year, room_number, block, phone, fee_status)
+VALUES
+  (1, 'RA2311003010518', 'B.Tech CSE', '3rd Year', 'A-205', 'Block A', '+91 7358689205', 'Paid');
+
+-- Notices (warden_id = 2)
+INSERT IGNORE INTO notices (notice_id, warden_id, title, content, priority, posted_at) VALUES
+  (1, 2, 'Hostel Closing for Winter Break',
+   'The hostel will be closed from March 10-20 for winter break. Please complete checkout formalities before leaving.',
+   'urgent', '2026-03-01 09:00:00'),
+  (2, 2, 'Mess Menu Update',
+   'New healthy options have been added to the weekly menu. Check the food menu section for complete details.',
+   'important', '2026-02-28 10:00:00'),
+  (3, 2, 'Room Inspection Schedule',
+   'Monthly room inspection is scheduled for March 5th. Please keep your rooms tidy and follow hostel norms.',
+   'important', '2026-02-27 08:00:00'),
+  (4, 2, 'Hostel Maintenance Schedule',
+   'The hostel will undergo routine maintenance on February 25th. Water supply will be interrupted from 9 AM to 12 PM.',
+   'important', '2026-02-20 07:00:00'),
+  (5, 2, 'Sports Day Announcement',
+   'Inter-hostel sports day will be held on March 5th. Interested students please register with the hostel warden by February 28th.',
+   'notice', '2026-02-18 11:00:00'),
+  (6, 2, 'New Mess Timings',
+   'From March 1st, dinner timings will be extended till 9:30 PM on weekdays. Weekend timings remain unchanged.',
+   'notice', '2026-02-15 09:00:00'),
+  (7, 2, 'Visitors Policy Update',
+   'Visitors are now allowed on weekends between 10 AM - 6 PM only. All visitors must register at the reception.',
+   'important', '2026-02-10 08:00:00');
+
+-- Food menu
+INSERT IGNORE INTO food_menu (day, meal_type, items, meal_time, updated_by) VALUES
+  ('Monday','Breakfast','Idli Sambar,Vada,Chutney,Tea/Coffee,Bread & Butter','7:00 AM - 9:00 AM',2),
+  ('Monday','Lunch',   'Rice,Dal Tadka,Paneer Butter Masala,Chapati,Curd,Pickle,Papad','12:30 PM - 2:00 PM',2),
+  ('Monday','Dinner',  'Chapati,Mixed Veg Curry,Dal Fry,Rice,Salad,Sweet','7:30 PM - 9:00 PM',2),
+  ('Tuesday','Breakfast','Poha,Upma,Boiled Eggs,Tea/Coffee,Fruit','7:00 AM - 9:00 AM',2),
+  ('Tuesday','Lunch',  'Rice,Rajma,Aloo Gobi,Chapati,Buttermilk,Salad','12:30 PM - 2:00 PM',2),
+  ('Tuesday','Dinner', 'Chapati,Egg Curry,Dal Makhani,Rice,Raita','7:30 PM - 9:00 PM',2),
+  ('Wednesday','Breakfast','Dosa,Sambar,Chutney,Tea/Coffee,Banana','7:00 AM - 9:00 AM',2),
+  ('Wednesday','Lunch','Rice,Chole Masala,Palak Paneer,Chapati,Curd,Papad','12:30 PM - 2:00 PM',2),
+  ('Wednesday','Dinner','Chapati,Aloo Matar,Moong Dal,Rice,Salad,Kheer','7:30 PM - 9:00 PM',2),
+  ('Thursday','Breakfast','Paratha,Curd,Pickle,Tea/Coffee,Juice','7:00 AM - 9:00 AM',2),
+  ('Thursday','Lunch', 'Rice,Dal Tadka,Jeera Aloo,Chapati,Buttermilk,Pickle','12:30 PM - 2:00 PM',2),
+  ('Thursday','Dinner','Chapati,Paneer Bhurji,Dal Fry,Fried Rice,Raita','7:30 PM - 9:00 PM',2),
+  ('Friday','Breakfast','Puri Bhaji,Fruit Salad,Tea/Coffee','7:00 AM - 9:00 AM',2),
+  ('Friday','Lunch',   'Biryani,Raita,Salad,Papad','12:30 PM - 2:00 PM',2),
+  ('Friday','Dinner',  'Chapati,Dal Makhani,Aloo Sabzi,Rice,Sweet','7:30 PM - 9:00 PM',2),
+  ('Saturday','Breakfast','Upma,Boiled Eggs,Tea/Coffee,Banana','7:00 AM - 9:00 AM',2),
+  ('Saturday','Lunch', 'Rice,Sambar,Rasam,Curd,Papad,Pickle','12:30 PM - 2:00 PM',2),
+  ('Saturday','Dinner','Chapati,Mixed Dal,Veg Pulao,Salad','7:30 PM - 9:00 PM',2),
+  ('Sunday','Breakfast','Idli,Vada,Sambar,Chutney,Tea/Coffee','7:00 AM - 9:00 AM',2),
+  ('Sunday','Lunch',   'Special Thali - Rice,Dal,2 Sabzi,Chapati,Sweet,Curd','12:30 PM - 2:00 PM',2),
+  ('Sunday','Dinner',  'Chapati,Paneer Curry,Dal,Rice,Ice Cream','7:30 PM - 9:00 PM',2);
+
+-- Sample complaints
+INSERT IGNORE INTO complaints (complaint_id, student_id, category, room_number, description, status, created_at) VALUES
+  (1, 1, 'Plumbing',    'A-205', 'Slow water drainage in bathroom',      'resolved',    '2026-02-20 10:00:00'),
+  (2, 1, 'Electrical',  'A-205', 'Light fixture needs replacement',       'inprogress',  '2026-02-25 11:00:00'),
+  (3, 1, 'Maintenance', 'A-205', 'AC not working properly',               'pending',     '2026-03-02 09:00:00');
+
+-- Sample ragging report (anonymous)
+INSERT IGNORE INTO ragging_reports
+  (report_id, student_id, reporter_name, room_number, incident_date, location, description, status)
+VALUES
+  (1, NULL, 'Anonymous', 'B-408', '2026-02-21',
+   'Second floor common area',
+   'Senior students from 4th floor were asking for money from juniors in the common area late at night.',
+   'investigating');
